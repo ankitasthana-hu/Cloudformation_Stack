@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EC2 Stack Creation for STG and PROD with instance profile to access S3 
+
+# Parameter defined
+Parameters:
+  KeyName:
+    Description: Key name to SSH to VM's. 
+    Type: AWS::EC2::KeyPair::KeyName
+
+# IAM role and Instance profile creation 
+
+Resources:
+  MyCICDEC2InstanceProfileRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: MyCICDEC2InstanceProfilePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:Get*'
+                  - 's3:List*'
+                Resource: '*'
+
+  MyInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref MyCICDEC2InstanceProfileRole
+
+
+# Security Group for referencing in Dev and PROD EC2 instance
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+     # VpcId:
+        # Ref: myVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 8080
+        ToPort: 8080
+        CidrIp: 0.0.0.0/0
+
+# STAGING EC2 Instance 
+  MyStagingInstance:
+     Type: AWS::EC2::Instance
+     Properties: 
+      ImageId: ami-0cd3dfa4e37921605
+      KeyName: !Ref KeyName
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref MyInstanceProfile
+      SecurityGroups: 
+        - !Ref MySecurityGroup
+      Tags:
+        - Key: Name        
+          Value: DEV
+      UserData: 
+        Fn::Base64: |  
+          #!/bin/bash
+          sudo yum update
+          sudo yum install ruby
+          sudo yum install wget
+          sudo yum -y erase java-1.7.0-openjdk.x86_64
+          sudo yum -y install java-1.8.0-openjdk.x86_64
+          sudo yum -y install java-1.8.0-openjdk-devel
+          sudo yum -y install tomcat8
+          cd /home/ec2-user
+          wget https://aws-codedeploy-us-east-2.s3.amazonaws.com/latest/install
+          chmod +x ./install
+          sudo ./install auto  
+
+# PROD EC2 Instance 
+  MyPRODInstance:
+     Type: AWS::EC2::Instance
+     Properties: 
+      ImageId: ami-0cd3dfa4e37921605
+      KeyName: !Ref KeyName
+      InstanceType: t2.micro
+      IamInstanceProfile: !Ref MyInstanceProfile
+      SecurityGroups: 
+        - !Ref MySecurityGroup
+      Tags:
+        - Key: Name        
+          Value: PROD
+      UserData: 
+        Fn::Base64: |  
+          #!/bin/bash
+          sudo yum update
+          sudo yum install ruby
+          sudo yum install wget
+          sudo yum -y erase java-1.7.0-openjdk.x86_64
+          sudo yum -y install java-1.8.0-openjdk.x86_64
+          sudo yum -y install java-1.8.0-openjdk-devel
+          sudo yum -y install tomcat8
+          cd /home/ec2-user
+          wget https://aws-codedeploy-us-east-2.s3.amazonaws.com/latest/install
+          chmod +x ./install
+          sudo ./install auto 
+
+
+Outputs:
+  StageAppURL:
+    Description: Staging Application Access URL
+    Value: !Sub 'http://${MyStagingInstance.PublicDnsName}:8080/ccdemo/hello'          
+  ProdAppURL:
+    Description: Prod Application Access URL
+    Value: !Sub 'http://${MyPRODInstance.PublicDnsName}:8080/ccdemo/hello'
